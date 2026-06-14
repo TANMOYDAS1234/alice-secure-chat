@@ -73,7 +73,7 @@ def serve_ui():
 @app.route("/video")
 def serve_video():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    video_path = os.path.join(base_dir, "ui", "001_In_a_dark_gothic_hall_a_young_woman_with_black_T6uW-akn.mp4")
+    video_path = os.path.join(base_dir, "ui", "VN20260612_010322.mp4")
     file_size = os.path.getsize(video_path)
     range_header = request.headers.get('Range', None)
     if range_header:
