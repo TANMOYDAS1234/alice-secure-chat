@@ -14,9 +14,6 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:hsl(var(-
 #loader{position:fixed;inset:0;background:#000;z-index:9999;display:flex;align-items:center;justify-content:center;transition:opacity .8s ease}
 #loader.hide{opacity:0;pointer-events:none}
 #loader-video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
-#sound-btn{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);z-index:10000;display:flex;align-items:center;gap:8px;padding:10px 18px;font-family:inherit;font-size:14px;color:#fff;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.35);border-radius:999px;cursor:pointer;backdrop-filter:blur(6px);transition:opacity .3s ease,transform .2s ease;animation:soundPulse 2s ease-in-out infinite}
-#sound-btn:hover{background:rgba(0,0,0,0.75);transform:translateX(-50%) scale(1.04)}
-@keyframes soundPulse{0%,100%{opacity:.85}50%{opacity:1}}
 #bg-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:none;filter:blur(18px) brightness(0.45);transform:scale(1.05)}
 @keyframes appFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 .app.reveal{animation:appFadeIn .5s ease forwards}
@@ -95,8 +92,7 @@ button.loading{pointer-events:none;opacity:0.7}
 <canvas id="bg-canvas"></canvas>
 
 <div id="loader">
-<video id="loader-video" src="/video" autoplay muted playsinline disablepictureinpicture controlslist="nodownload nofullscreen"></video>
-<button id="sound-btn" type="button" aria-label="Tap for sound">🔊 Tap for sound</button>
+<video id="loader-video" src="/video" playsinline preload="auto" disablepictureinpicture controlslist="nodownload nofullscreen"></video>
 </div>
 <div class="app">
 <div class="header">
@@ -162,17 +158,23 @@ loaderVideo.addEventListener('error',()=>{
   setTimeout(()=>{ loader.style.display='none'; startReceiving(); },500);
 });
 
-// Browsers block autoplay WITH sound, so the loader starts muted. A user
-// gesture is required to unmute — one tap on this button enables audio.
-const soundBtn=document.getElementById('sound-btn');
-soundBtn.addEventListener('click',()=>{
-  loaderVideo.muted=false;
-  loaderVideo.volume=1;
-  loaderVideo.play().catch(()=>{});
-  soundBtn.style.display='none';
-});
-// Hide the prompt once the loader is done either way.
-loaderVideo.addEventListener('ended',()=>{ soundBtn.style.display='none'; });
+// Try to autoplay WITH sound. Browsers usually block autoplay-with-audio until
+// the user interacts, so if it's rejected we start muted and unmute on the very
+// first user gesture anywhere — no button needed.
+loaderVideo.muted=false;
+loaderVideo.volume=1;
+(function autoplayWithSound(){
+  const p=loaderVideo.play();
+  if(p&&p.catch){
+    p.catch(()=>{
+      loaderVideo.muted=true;
+      loaderVideo.play().catch(()=>{});
+      const evs=['pointerdown','keydown','touchstart','click'];
+      const unmute=()=>{loaderVideo.muted=false;loaderVideo.volume=1;evs.forEach(ev=>window.removeEventListener(ev,unmute));};
+      evs.forEach(ev=>window.addEventListener(ev,unmute));
+    });
+  }
+})();
 
 function startReceiving(){
   if(receiverInterval)return;
