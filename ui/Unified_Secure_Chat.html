@@ -388,7 +388,7 @@ function addToChat(text,type,msgId,quantum){
         ['👍','❤️','😂','😮','😢','🔥','💯','🎉'].forEach(emoji=>{
             const btn=document.createElement('button');
             btn.textContent=emoji;
-            btn.onclick=(e)=>{e.stopPropagation();addReaction(wrapper,emoji,text);picker.remove();};
+            btn.onclick=(e)=>{e.stopPropagation();addReaction(wrapper,emoji);picker.remove();};
             picker.appendChild(btn);
         });
         document.body.appendChild(picker);
@@ -424,7 +424,9 @@ function addToChat(text,type,msgId,quantum){
     chat.scrollTop=chat.scrollHeight;
 }
 
-async function addReaction(wrapperEl,emoji,msgText){
+async function addReaction(wrapperEl,emoji){
+    const msgId=wrapperEl.dataset.msgId;
+    if(!msgId)return;                       // need a shared id to react
     const msgEl=wrapperEl.querySelector('.msg');
     let reactions=msgEl.querySelector('.reactions');
     if(!reactions){
@@ -432,10 +434,9 @@ async function addReaction(wrapperEl,emoji,msgText){
         reactions.className='reactions';
         msgEl.appendChild(reactions);
     }
-    
-    await fetch('/add_reaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msgText,emoji:emoji,user:myName})});
-    await fetch(peerUrl+'/add_reaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msgText,emoji:emoji,user:myName})}).catch(()=>{});
-    
+    // single POST to our own server; it relays to the peer server-side
+    fetch('/add_reaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msg_id:msgId,emoji:emoji,user:myName})}).catch(()=>{});
+
     updateReactionDisplay(wrapperEl,{[myName]:emoji,[peerName]:reactions.dataset.peerEmoji});
     
     let burst=msgEl.querySelector('.burst-container');
@@ -478,9 +479,8 @@ function updateReactionDisplay(wrapperEl,reactionsObj){
             if(user===myName){
                 item.style.cursor='pointer';
                 item.onclick=async()=>{
-                    const msgText=wrapperEl.dataset.msgText;
-                    await fetch('/remove_reaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msgText,user:myName})});
-                    await fetch(peerUrl+'/remove_reaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msgText,user:myName})}).catch(()=>{});
+                    const msgId=wrapperEl.dataset.msgId;
+                    fetch('/remove_reaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msg_id:msgId,user:myName})}).catch(()=>{});
                     delete reactionsObj[myName];
                     updateReactionDisplay(wrapperEl,reactionsObj);
                 };
@@ -586,7 +586,7 @@ async function receiveMsg(){
 
         if(j.status==='SUCCESS'){
             hideTyping();
-            add(j.message,'recv',null,j.quantum);
+            add(j.message,'recv',j.msg_id,j.quantum);
             showQuantum(j.quantum);
             statusBox.textContent='✓ Message received';
             receiveMsg();
@@ -618,25 +618,18 @@ function checkDeliveryStatus(){
 setInterval(checkDeliveryStatus,3000);
 
 function syncReactions(){
-    if(!peerUrl)return;
     fetch('/get_reactions')
         .then(r=>r.json())
         .then(data=>{
-            const allMessages=new Set();
-            document.querySelectorAll('.msg-wrapper[data-msg-text]').forEach(w=>allMessages.add(w.dataset.msgText));
-            
-            const reactedMessages=new Set();
+            const reacted=new Set();
             data.reactions.forEach(item=>{
-                reactedMessages.add(item.text);
-                const wrapper=Array.from(document.querySelectorAll('.msg-wrapper')).find(w=>w.dataset.msgText===item.text);
+                reacted.add(item.msg_id);
+                const wrapper=document.querySelector('.msg-wrapper[data-msg-id="'+item.msg_id+'"]');
                 if(wrapper)updateReactionDisplay(wrapper,item.reactions);
             });
-            
-            allMessages.forEach(msgText=>{
-                if(!reactedMessages.has(msgText)){
-                    const wrapper=Array.from(document.querySelectorAll('.msg-wrapper')).find(w=>w.dataset.msgText===msgText);
-                    if(wrapper)updateReactionDisplay(wrapper,{});
-                }
+            // clear reactions that were removed on the other side
+            document.querySelectorAll('.msg-wrapper[data-msg-id]').forEach(w=>{
+                if(!reacted.has(w.dataset.msgId) && w.querySelector('.reactions')) updateReactionDisplay(w,{});
             });
         })
         .catch(()=>{});
